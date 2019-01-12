@@ -2,6 +2,7 @@
 
 Table of Contents
 =================
+## Part I: TensorFlow Fundamentals
 1.  [TensorFlow Basics](#basics)
 2.  [Understanding static and dynamic shapes](#shapes)
 3.  [Scopes and when to use them](#scopes)
@@ -15,17 +16,17 @@ Table of Contents
 11. [Debugging TensorFlow models](#debug)
 12. [Numerical stability in TensorFlow](#stable)
 13. [Building a neural network training framework with learn API](#tf_learn)
-14. [TensorFlow Cookbook](#cookbook)
-    - [Get shape](#get_shape)
-    - [Batch gather](#batch_gather)
-    - [Beam search](#beam_search)
-    - [Merge](#merge)
-    - [Entropy](#entropy)
-    - [KL-Divergence](#kld)
-    - [Make parallel](#make_parallel)
-    - [Leaky Relu](#leaky_relu)
-    - [Batch normalization](#batch_norm)
-    - [Squeeze and excitation](#squeeze_excite)
+
+## Part II: TensorFlow Cookbook
+1. [Get shape](#get_shape)
+2. [Batch gather](#batch_gather)
+3. [Beam search](#beam_search)
+4. [Merge](#merge)
+5. [Entropy](#entropy)
+6. [KL-Divergence](#kld)
+7. [Make parallel](#make_parallel)
+8. [Leaky Relu](#leaky_relu)
+9. [Batch normalization](#batch_norm)
 ---
 
 _We aim to gradually expand this series by adding new articles and keep the content up to date with the latest releases of TensorFlow API. If you have suggestions on how to improve this series or find the explanations ambiguous, feel free to create an issue, send patches, or reach out by email._
@@ -34,6 +35,9 @@ _We aim to gradually expand this series by adding new articles and keep the cont
 ```
 git clone https://github.com/vahidk/TensorflowFramework.git
 ```
+
+# Part I: TensorFlow Fundamentals
+<a name="fundamentals"></a>
 
 ## TensorFlow Basics
 <a name="basics"></a>
@@ -269,13 +273,23 @@ with tf.variable_scope("scope", reuse=True):
 
 This becomes handy for example when using built-in neural network layers:
 ```python
-features1 = tf.layers.conv2d(image1, filters=32, kernel_size=3)
+with tf.variable_scope('my_scope'):
+  features1 = tf.layers.conv2d(image1, filters=32, kernel_size=3)
 # Use the same convolution weights to process the second image:
-with tf.variable_scope(tf.get_variable_scope(), reuse=True):
+with tf.variable_scope('my_scope', reuse=True):
   features2 = tf.layers.conv2d(image2, filters=32, kernel_size=3)
 ```
 
-This syntax may not look very clean to some. Especially if you want to do lots of variable sharing keeping track of when to define new variables and when to reuse them can be cumbersome and error prone. TensorFlow templates are designed to handle this automatically:
+Alternatively you can set reuse to tf.AUTO_REUSE which tells TensorFlow to create a new variable if a variable with the same name doesn't exist, and reuse otherwise:
+```python
+with tf.variable_scope("scope", reuse=tf.AUTO_REUSE):
+  features1 = tf.layers.conv2d(image1, filters=32, kernel_size=3)
+  
+with tf.variable_scope("scope", reuse=tf.AUTO_REUSE):
+  features2 = tf.layers.conv2d(image2, filters=32, kernel_size=3)
+```
+
+If you want to do lots of variable sharing keeping track of when to define new variables and when to reuse them can be cumbersome and error prone. tf.AUTO_REUSE simplifies this task but adds the risk of sharing variables that weren't supposed to be shared. TensorFlow templates are another way of tackling the same problem without this risk:
 ```python
 conv3x32 = tf.make_template("conv3x32", lambda x: tf.layers.conv2d(x, 32, 3))
 features1 = conv3x32(image1)
@@ -800,7 +814,7 @@ def make_parallel(fn, num_gpus, **kwargs):
     out_split = []
     for i in range(num_gpus):
         with tf.device(tf.DeviceSpec(device_type="GPU", device_index=i)):
-            with tf.variable_scope(tf.get_variable_scope(), reuse=i > 0):
+            with tf.variable_scope(tf.get_variable_scope(), reuse=tf.AUTO_REUSE):
                 out_split.append(fn(**{k : v[i] for k, v in in_splits.items()}))
 
     return tf.concat(out_split, axis=0)
@@ -1099,7 +1113,7 @@ For simplicity, in most of the examples here we manually create sessions and we 
 
 When experimenting with neural network models you usually have a training/test split. You want to train your model on the training set, and once in a while evaluate it on test set and compute some metrics. You also need to store the model parameters as a checkpoint, and ideally you want to be able to stop and resume training. TensorFlow's learn API is designed to make this job easier, letting us focus on developing the actual model.
 
-The most basic way of using tf.learn API is to use tf.Estimator object directly. You need to define a model function that defines a loss function, a train op, one or a set of predictions, and optinoally a set of metric ops for evaluation:
+The most basic way of using tf.learn API is to use tf.Estimator object directly. You need to define a model function that defines a loss function, a train op, one or a set of predictions, and optionally a set of metric ops for evaluation:
 ```python
 import tensorflow as tf
 
@@ -1199,7 +1213,7 @@ The framework also comes with a simple convolutional network classifier in [alex
 
 And that's it! This is all you need to get started with TensorFlow learn API. I recommend to have a look at the framework [source code](https://github.com/vahidk/TensorFlowFramework) and see the official python API to learn more about the learn API.
 
-## TensorFlow Cookbook
+# Part II: TensorFlow Cookbook
 <a name="cookbook"></a>
 This section includes implementation of a set of common operations in TensorFlow.
 
@@ -1398,7 +1412,7 @@ def make_parallel(fn, num_gpus, **kwargs):
   out_split = []
   for i in range(num_gpus):
     with tf.device(tf.DeviceSpec(device_type="GPU", device_index=i)):
-      with tf.variable_scope(tf.get_variable_scope(), reuse=i > 0):
+      with tf.variable_scope(tf.get_variable_scope(), reuse=tf.AUTO_REUSE):
         out_split.append(fn(**{k : v[i] for k, v in in_splits.items()}))
 
   return tf.concat(out_split, axis=0)
@@ -1466,24 +1480,5 @@ def batch_normalization(tensor, training=False, epsilon=0.001, momentum=0.9,
       tf.add_to_collection(tf.GraphKeys.UPDATE_OPS, update_mean)
       tf.add_to_collection(tf.GraphKeys.UPDATE_OPS, update_variance)
 
-  return tensor
-```
-
-## Squeeze and excitation <a name="squeeze_excite"></a>
-```python
-def squeeze_and_excite(tensor, ratio=16, name=None):
-  """Apply squeeze/excite on given 4-D tensor.
-  
-  Based on: https://arxiv.org/abs/1709.01507
-  """
-  with tf.variable_scope(name, default_name="squeeze_and_excite"):
-    original = tensor
-    units = tensor.shape.as_list()[-1]
-    tensor = tf.reduce_mean(tensor, [1, 2], keep_dims=True)
-    tensor = tf.layers.dense(tensor, units / ratio, use_bias=False)
-    tensor = tf.nn.relu(tensor)
-    tensor = tf.layers.dense(tensor, units, use_bias=False)
-    tensor = tf.nn.sigmoid(tensor)
-    tensor = original * tensor
   return tensor
 ```
